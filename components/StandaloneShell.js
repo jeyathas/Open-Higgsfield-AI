@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio } from 'studio';
+import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, AvatarStudio } from 'studio';
 import ApiKeyModal from './ApiKeyModal';
 
 const TABS = [
@@ -9,6 +9,7 @@ const TABS = [
   { id: 'video',   label: 'Video Studio' },
   { id: 'lipsync', label: 'Lip Sync' },
   { id: 'cinema',  label: 'Cinema Studio' },
+  { id: 'avatar',  label: 'Avatar Studio' },
 ];
 
 const STORAGE_KEY = 'muapi_key';
@@ -87,6 +88,7 @@ export default function StandaloneShell() {
         {activeTab === 'video'   && <VideoStudio   apiKey={apiKey} />}
         {activeTab === 'lipsync' && <LipSyncStudio apiKey={apiKey} />}
         {activeTab === 'cinema'  && <CinemaStudio  apiKey={apiKey} />}
+        {activeTab === 'avatar'  && <AvatarStudio  apiKey={apiKey} />}
       </div>
 
       {/* Settings Modal */}
