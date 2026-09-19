@@ -5,11 +5,12 @@ const POLL_TIMEOUT_MS = 15000;
 const SUBMIT_TIMEOUT_MS = 30000;
 const UPLOAD_TIMEOUT_MS = 300000;
 
-async function fetchWithTimeout(url, options, timeoutMs) {
+async function fetchWithTimeout(url, options, timeoutMs, consume) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(url, { ...options, signal: controller.signal });
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        return await consume(response);
     } catch (error) {
         if (error.name === 'AbortError') {
             throw new Error(`Request timed out after ${timeoutMs}ms: ${url}`);
@@ -20,31 +21,41 @@ async function fetchWithTimeout(url, options, timeoutMs) {
     }
 }
 
+function isRetryableStatus(status) {
+    return status >= 500 || status === 408 || status === 429;
+}
+
 async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000) {
     const pollUrl = `${BASE_URL}/api/v1/predictions/${requestId}/result`;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const deadline = Date.now() + maxAttempts * interval;
+    while (Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, interval));
         try {
-            const response = await fetchWithTimeout(pollUrl, {
+            const outcome = await fetchWithTimeout(pollUrl, {
                 headers: { 'Content-Type': 'application/json', 'x-api-key': key }
-            }, POLL_TIMEOUT_MS);
-            if (!response.ok) {
-                const errText = await response.text();
-                if (response.status >= 500) continue;
-                const httpError = new Error(`Poll Failed: ${response.status} - ${errText.slice(0, 100)}`);
+            }, POLL_TIMEOUT_MS, async (response) => {
+                if (!response.ok) {
+                    return { ok: false, status: response.status, errText: await response.text() };
+                }
+                return { ok: true, data: await response.json() };
+            });
+
+            if (!outcome.ok) {
+                if (isRetryableStatus(outcome.status)) continue;
+                const httpError = new Error(`Poll Failed: ${outcome.status} - ${outcome.errText.slice(0, 100)}`);
                 httpError.terminal = true;
                 throw httpError;
             }
-            const data = await response.json();
-            const status = data.status?.toLowerCase();
-            if (status === 'completed' || status === 'succeeded' || status === 'success') return data;
+
+            const status = outcome.data.status?.toLowerCase();
+            if (status === 'completed' || status === 'succeeded' || status === 'success') return outcome.data;
             if (status === 'failed' || status === 'error') {
-                const genError = new Error(`Generation failed: ${data.error || 'Unknown error'}`);
+                const genError = new Error(`Generation failed: ${outcome.data.error || 'Unknown error'}`);
                 genError.terminal = true;
                 throw genError;
             }
         } catch (error) {
-            if (error.terminal || attempt === maxAttempts) throw error;
+            if (error.terminal || Date.now() >= deadline) throw error;
         }
     }
     throw new Error('Generation timed out after polling.');
@@ -52,16 +63,17 @@ async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000)
 
 async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 60) {
     const url = `${BASE_URL}/api/v1/${endpoint}`;
-    const response = await fetchWithTimeout(url, {
+    const submitData = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key },
         body: JSON.stringify(payload)
-    }, SUBMIT_TIMEOUT_MS);
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`API Request Failed: ${response.status} ${response.statusText} - ${errText.slice(0, 100)}`);
-    }
-    const submitData = await response.json();
+    }, SUBMIT_TIMEOUT_MS, async (response) => {
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`API Request Failed: ${response.status} ${response.statusText} - ${errText.slice(0, 100)}`);
+        }
+        return response.json();
+    });
     const requestId = submitData.request_id || submitData.id;
     if (!requestId) return submitData;
     if (onRequestId) onRequestId(requestId);
