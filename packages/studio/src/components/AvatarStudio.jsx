@@ -133,7 +133,7 @@ function AvatarUploadSlot({ imageUrl, uploading, progress, onFileSelected, onCle
 
 // ─── Main component ─────────────────────────────────────────────────────────────
 
-export default function AvatarStudio({ apiKey, onGenerationComplete, historyItems }) {
+export default function AvatarStudio({ apiKey, onGenerationComplete, historyItems, onAnimateAvatar }) {
   // ── Upload state ──
   const [uploadedImageUrl, setUploadedImageUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -290,7 +290,7 @@ export default function AvatarStudio({ apiKey, onGenerationComplete, historyItem
             />
           </div>
 
-          <div className="mt-6 flex gap-3 justify-center">
+          <div className="mt-6 flex flex-wrap gap-3 justify-center">
             <button
               type="button"
               onClick={handleRegenerate}
@@ -306,6 +306,16 @@ export default function AvatarStudio({ apiKey, onGenerationComplete, historyItem
             >
               ↓ Download
             </button>
+            {onAnimateAvatar && (
+              <button
+                type="button"
+                onClick={() => onAnimateAvatar(canvasUrl)}
+                className="bg-white/10 hover:bg-white/20 px-6 py-2.5 rounded-2xl text-xs font-bold transition-all border border-white/5 backdrop-blur-lg text-white"
+                title="Send this avatar to Lip Sync Studio to make it talk"
+              >
+                🎬 Animate as Talking Avatar
+              </button>
+            )}
             <button
               type="button"
               onClick={resetToPrompt}

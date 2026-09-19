@@ -19,6 +19,12 @@ export default function StandaloneShell() {
   const [activeTab, setActiveTab] = useState('image');
   const [showSettings, setShowSettings] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
+  const [avatarHandoffUrl, setAvatarHandoffUrl] = useState(null);
+
+  const handleAnimateAvatar = useCallback((url) => {
+    setAvatarHandoffUrl(url);
+    setActiveTab('lipsync');
+  }, []);
 
   useEffect(() => {
     setHasMounted(true);
@@ -86,9 +92,15 @@ export default function StandaloneShell() {
       <div className="flex-1">
         {activeTab === 'image'   && <ImageStudio   apiKey={apiKey} />}
         {activeTab === 'video'   && <VideoStudio   apiKey={apiKey} />}
-        {activeTab === 'lipsync' && <LipSyncStudio apiKey={apiKey} />}
+        {activeTab === 'lipsync' && (
+          <LipSyncStudio
+            apiKey={apiKey}
+            initialImageUrl={avatarHandoffUrl}
+            onInitialImageConsumed={() => setAvatarHandoffUrl(null)}
+          />
+        )}
         {activeTab === 'cinema'  && <CinemaStudio  apiKey={apiKey} />}
-        {activeTab === 'avatar'  && <AvatarStudio  apiKey={apiKey} />}
+        {activeTab === 'avatar'  && <AvatarStudio  apiKey={apiKey} onAnimateAvatar={handleAnimateAvatar} />}
       </div>
 
       {/* Settings Modal */}

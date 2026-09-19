@@ -219,7 +219,7 @@ const VideoIcon = ({ className = 'text-muted group-hover:text-primary transition
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
-export default function LipSyncStudio({ apiKey, onGenerationComplete, historyItems }) {
+export default function LipSyncStudio({ apiKey, onGenerationComplete, historyItems, initialImageUrl, onInitialImageConsumed }) {
     // ── Mode & model state ──────────────────────────────────────────────────
     const [inputMode, setInputMode] = useState('image'); // 'image' | 'video'
 
@@ -286,6 +286,17 @@ export default function LipSyncStudio({ apiKey, onGenerationComplete, historyIte
         setSelectedModelId(first.id);
         setSelectedResolution(first.inputs?.resolution?.default ?? '480p');
     }, [inputMode]);
+
+    // ── Accept a handed-off image (e.g. from Avatar Studio) on mount ────────
+    useEffect(() => {
+        if (!initialImageUrl) return;
+        setInputMode('image');
+        setImageUrl(initialImageUrl);
+        setImageState(UPLOAD_STATE.READY);
+        setImageName('Avatar');
+        onInitialImageConsumed?.();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ── Upload handlers ─────────────────────────────────────────────────────
     const handleImageUpload = useCallback(async (file) => {
