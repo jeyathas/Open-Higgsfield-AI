@@ -397,7 +397,8 @@ export default function LipSyncStudio({ apiKey, onGenerationComplete, historyIte
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(blobUrl);
-        } catch {
+        } catch (err) {
+            console.warn('[LipSyncStudio] Direct download failed, falling back to window.open', err);
             window.open(url, '_blank');
         }
     };
@@ -420,7 +421,6 @@ export default function LipSyncStudio({ apiKey, onGenerationComplete, historyIte
             else lipsyncParams.video_url = videoUrl;
             if (prompt && selectedModel?.hasPrompt) lipsyncParams.prompt = prompt;
             if (showResolution) lipsyncParams.resolution = selectedResolution;
-            if (selectedModel?.hasSeed) lipsyncParams.seed = -1;
 
             const res = await processLipSync(apiKey, lipsyncParams);
 

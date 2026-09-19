@@ -1,26 +1,50 @@
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getLipSyncModelById } from './models.js';
 
 const BASE_URL = 'https://api.muapi.ai';
+const POLL_TIMEOUT_MS = 15000;
+const SUBMIT_TIMEOUT_MS = 30000;
+const UPLOAD_TIMEOUT_MS = 300000;
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            throw new Error(`Request timed out after ${timeoutMs}ms: ${url}`);
+        }
+        throw error;
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000) {
     const pollUrl = `${BASE_URL}/api/v1/predictions/${requestId}/result`;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await new Promise(resolve => setTimeout(resolve, interval));
         try {
-            const response = await fetch(pollUrl, {
+            const response = await fetchWithTimeout(pollUrl, {
                 headers: { 'Content-Type': 'application/json', 'x-api-key': key }
-            });
+            }, POLL_TIMEOUT_MS);
             if (!response.ok) {
                 const errText = await response.text();
                 if (response.status >= 500) continue;
-                throw new Error(`Poll Failed: ${response.status} - ${errText.slice(0, 100)}`);
+                const httpError = new Error(`Poll Failed: ${response.status} - ${errText.slice(0, 100)}`);
+                httpError.terminal = true;
+                throw httpError;
             }
             const data = await response.json();
             const status = data.status?.toLowerCase();
             if (status === 'completed' || status === 'succeeded' || status === 'success') return data;
-            if (status === 'failed' || status === 'error') throw new Error(`Generation failed: ${data.error || 'Unknown error'}`);
+            if (status === 'failed' || status === 'error') {
+                const genError = new Error(`Generation failed: ${data.error || 'Unknown error'}`);
+                genError.terminal = true;
+                throw genError;
+            }
         } catch (error) {
-            if (attempt === maxAttempts) throw error;
+            if (error.terminal || attempt === maxAttempts) throw error;
         }
     }
     throw new Error('Generation timed out after polling.');
@@ -28,11 +52,11 @@ async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000)
 
 async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 60) {
     const url = `${BASE_URL}/api/v1/${endpoint}`;
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key },
         body: JSON.stringify(payload)
-    });
+    }, SUBMIT_TIMEOUT_MS);
     if (!response.ok) {
         const errText = await response.text();
         throw new Error(`API Request Failed: ${response.status} ${response.statusText} - ${errText.slice(0, 100)}`);
@@ -53,6 +77,7 @@ export async function generateImage(apiKey, params) {
     if (params.aspect_ratio) payload.aspect_ratio = params.aspect_ratio;
     if (params.resolution) payload.resolution = params.resolution;
     if (params.quality) payload.quality = params.quality;
+    if (params.negative_prompt) payload.negative_prompt = params.negative_prompt;
     if (params.image_url) { payload.image_url = params.image_url; payload.strength = params.strength || 0.6; }
     else payload.image_url = null;
     if (params.seed && params.seed !== -1) payload.seed = params.seed;
@@ -87,6 +112,8 @@ export async function generateVideo(apiKey, params) {
     if (params.quality) payload.quality = params.quality;
     if (params.mode) payload.mode = params.mode;
     if (params.image_url) payload.image_url = params.image_url;
+    if (params.video_url) payload.video_url = params.video_url;
+    if (params.request_id) payload.request_id = params.request_id;
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 900);
 }
 
@@ -130,6 +157,7 @@ export function uploadFile(apiKey, file, onProgress) {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', url);
         xhr.setRequestHeader('x-api-key', apiKey);
+        xhr.timeout = UPLOAD_TIMEOUT_MS;
 
         if (onProgress) {
             xhr.upload.onprogress = (event) => {
@@ -166,6 +194,7 @@ export function uploadFile(apiKey, file, onProgress) {
         };
 
         xhr.onerror = () => reject(new Error('Network error during file upload'));
+        xhr.ontimeout = () => reject(new Error(`Upload timed out after ${UPLOAD_TIMEOUT_MS}ms`));
         xhr.send(formData);
     });
 }
